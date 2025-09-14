@@ -1,0 +1,2 @@
+*.diff text linguist-language=Diff
+*.md   text
