@@ -1,0 +1,114 @@
+--- a/programs/wager-program/src/errors.rs
++++ b/programs/wager-program/src/errors.rs
+@@
+ pub enum WagerError {
+@@
+     #[msg("Game is not in progress")]
+     GameNotInProgress,
++    #[msg("Invalid SPL Token program id")]
++    InvalidTokenProgram,
++    #[msg("Invalid Associated Token program id")]
++    InvalidAssociatedTokenProgram,
++    #[msg("Session already settled")]
++    AlreadySettled,
++    #[msg("Spawn counter overflow")]
++    SpawnOverflow,
++    #[msg("Duplicate winner in distribution")]
++    DuplicateWinner,
+ }
+--- a/programs/wager-program/src/state.rs
++++ b/programs/wager-program/src/state.rs
+@@
+-        match victim_team {
+-            0 => self.team_a.player_spawns[victim_player_index] -= 1,
+-            1 => self.team_b.player_spawns[victim_player_index] -= 1,
+-            _ => return Err(error!(WagerError::InvalidTeam)),
+-        }
++        match victim_team {
++            0 => {
++                let s = self.team_a.player_spawns[victim_player_index];
++                require!(s > 0, WagerError::PlayerHasNoSpawns);
++                self.team_a.player_spawns[victim_player_index] = s - 1;
++            }
++            1 => {
++                let s = self.team_b.player_spawns[victim_player_index];
++                require!(s > 0, WagerError::PlayerHasNoSpawns);
++                self.team_b.player_spawns[victim_player_index] = s - 1;
++            }
++            _ => return Err(error!(WagerError::InvalidTeam)),
++        }
+@@
+-        match team {
+-            0 => self.team_a.player_spawns[player_index] += 10u16,
+-            1 => self.team_b.player_spawns[player_index] += 10u16,
+-            _ => return Err(error!(WagerError::InvalidTeam)),
+-        }
++        match team {
++            0 => {
++                let s = self.team_a.player_spawns[player_index];
++                self.team_a.player_spawns[player_index] = s.checked_add(10).ok_or(error!(WagerError::SpawnOverflow))?;
++            }
++            1 => {
++                let s = self.team_b.player_spawns[player_index];
++                self.team_b.player_spawns[player_index] = s.checked_add(10).ok_or(error!(WagerError::SpawnOverflow))?;
++            }
++            _ => return Err(error!(WagerError::InvalidTeam)),
++        }
+--- a/programs/wager-program/src/instructions/create_game_session.rs
++++ b/programs/wager-program/src/instructions/create_game_session.rs
+@@
+-    pub token_program: Program<'info, Token>,
+-    pub associated_token_program: Program<'info, AssociatedToken>,
++    #[account(address = anchor_spl::token::ID @ WagerError::InvalidTokenProgram)]
++    pub token_program: Program<'info, Token>,
++    #[account(address = anchor_spl::associated_token::ID @ WagerError::InvalidAssociatedTokenProgram)]
++    pub associated_token_program: Program<'info, AssociatedToken>,
+--- a/programs/wager-program/src/instructions/join_user.rs
++++ b/programs/wager-program/src/instructions/join_user.rs
+@@
+-    pub token_program: Program<'info, Token>,
+-    pub associated_token_program: Program<'info, AssociatedToken>,
++    #[account(address = anchor_spl::token::ID @ WagerError::InvalidTokenProgram)]
++    pub token_program: Program<'info, Token>,
++    #[account(address = anchor_spl::associated_token::ID @ WagerError::InvalidAssociatedTokenProgram)]
++    pub associated_token_program: Program<'info, AssociatedToken>,
+--- a/programs/wager-program/src/instructions/pay_to_spawn.rs
++++ b/programs/wager-program/src/instructions/pay_to_spawn.rs
+@@
+-    pub token_program: Program<'info, Token>,
+-    pub associated_token_program: Program<'info, AssociatedToken>,
++    #[account(address = anchor_spl::token::ID @ WagerError::InvalidTokenProgram)]
++    pub token_program: Program<'info, Token>,
++    #[account(address = anchor_spl::associated_token::ID @ WagerError::InvalidAssociatedTokenProgram)]
++    pub associated_token_program: Program<'info, AssociatedToken>,
+--- a/programs/wager-program/src/instructions/refund_wager.rs
++++ b/programs/wager-program/src/instructions/refund_wager.rs
+@@
+-    pub token_program: Program<'info, Token>,
+-    pub associated_token_program: Program<'info, AssociatedToken>,
++    #[account(address = anchor_spl::token::ID @ WagerError::InvalidTokenProgram)]
++    pub token_program: Program<'info, Token>,
++    #[account(address = anchor_spl::associated_token::ID @ WagerError::InvalidAssociatedTokenProgram)]
++    pub associated_token_program: Program<'info, AssociatedToken>,
+@@
+-    Ok(())
++    let game_session = &mut ctx.accounts.game_session;
++    game_session.status = GameStatus::Completed;
++    Ok(())
+--- a/programs/wager-program/src/instructions/distribute_winnings.rs
++++ b/programs/wager-program/src/instructions/distribute_winnings.rs
+@@
+-    pub token_program: Program<'info, Token>,
+-    pub associated_token_program: Program<'info, AssociatedToken>,
++    #[account(address = anchor_spl::token::ID @ WagerError::InvalidTokenProgram)]
++    pub token_program: Program<'info, Token>,
++    #[account(address = anchor_spl::associated_token::ID @ WagerError::InvalidAssociatedTokenProgram)]
++    pub associated_token_program: Program<'info, AssociatedToken>,
+@@
+-    for i in 0..players_per_team {
++    let mut seen: std::collections::HashSet<Pubkey> = std::collections::HashSet::new();
++    for i in 0..players_per_team {
+@@
+-        );
++        );
++        require!(seen.insert(winner_pubkey), WagerError::DuplicateWinner);
